@@ -152,10 +152,12 @@ function montar(f, opts) {
   const mat = estag ? m.slice(2, -2) : (m.length > 2 ? m.slice(0, -2) : m);
   // Tipo de conta na plataforma
   const tudo = [f.regime, f.vinculo, f.cargo, f.tabela].join(' ').toUpperCase();
-  let tipoConta = 'Servidor (Ales)';
+  // se não se enquadrar em nenhuma regra, fica em branco
+  let tipoConta = '';
   if (estag) tipoConta = 'Estagiário (Ales)';
   else if (/DEPUTADO/.test(f.cargo || '')) tipoConta = 'Deputado Estadual (Ales)';
   else if (/APOSENT|INATIV/.test(tudo)) tipoConta = 'Aposentado (Inativo)';
+  else if (/COMISSION|EFETIV|ESTATUT|SERVIDOR/.test(tudo)) tipoConta = 'Servidor (Ales)';
   const cargo = f.cargo + (f.tabPadrao ? ` (${f.tabPadrao})` : '');
   const linhas = [
     ['Tipo de conta', tipoConta],
@@ -180,7 +182,7 @@ function montar(f, opts) {
     ['Nome do grupo', f.grupo],
   ];
   const avisos = [];
-  for (const [k, v] of linhas) if (!v && !k.startsWith('SENHA')) avisos.push(`${k} não encontrado na ficha`);
+  for (const [k, v] of linhas) if (!v && !k.startsWith('SENHA')) avisos.push(k === 'Tipo de conta' ? 'Tipo de conta não identificado: escolha manualmente na plataforma' : `${k} não encontrado na ficha`);
   return { linhas, avisos, texto: linhas.map(([k, v]) => `${k}: ${v}`).join('\n') };
 }
 
@@ -209,7 +211,7 @@ function montar(f, opts) {
         <div class="meta">${esc(fichas[i].origem)}</div>
         ${b.avisos.length ? `<div class="warn">${b.avisos.map(esc).join('<br>')}</div>` : ''}
         <div class="rows">${b.linhas.map(([k, v], j) => `
-          <div class="row"><span class="k">${esc(k)}</span><span class="v${v ? '' : ' empty'}">${v ? esc(v) : (j === 3 ? 'preencha a senha padrão acima' : 'não encontrado')}</span><button class="cp" data-i="${i}" data-j="${j}"${v ? '' : ' disabled'}>Copiar</button></div>`).join('')}
+          <div class="row"><span class="k">${esc(k)}</span><span class="v${v ? '' : ' empty'}">${v ? esc(v) : (j === 3 ? 'preencha a senha padrão acima' : j === 0 ? 'não identificado' : 'não encontrado')}</span><button class="cp" data-i="${i}" data-j="${j}"${v ? '' : ' disabled'}>Copiar</button></div>`).join('')}
         </div>
       </article>`).join('');
     out._built = built;
