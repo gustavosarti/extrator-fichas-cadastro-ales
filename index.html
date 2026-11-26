@@ -27,6 +27,11 @@ h1{font-size:clamp(28px,4vw,44px);line-height:1.05;margin:0 0 6px;font-weight:80
 .btn:focus-visible,.cp:focus-visible,.tray:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 .bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:18px 0}
 .status{color:var(--mute)}
+#pdf{background:var(--acc);color:#fff}
+.card{position:relative}
+.rm{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--mute);font-size:20px;line-height:1;cursor:pointer}
+.rm:hover{color:var(--warn);border-color:var(--warn)}
+.card h2{padding-right:44px}
 .pw{display:flex;gap:8px;align-items:center;font-weight:600}
 .pw input{font:inherit;font-size:16px;min-height:44px;padding:0 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);width:14em}
 .pw input:focus-visible{outline:3px solid var(--acc);outline-offset:1px}
@@ -61,6 +66,7 @@ h1{font-size:clamp(28px,4vw,44px);line-height:1.05;margin:0 0 6px;font-weight:80
 
   <div class="bar">
     <label class="pw">Senha padrão <input id="senha" type="text" autocomplete="off" spellcheck="false" placeholder="digite a senha padrão"></label>
+    <button class="btn" id="pdf" hidden>Gerar PDF para impressão (4 por folha)</button>
     <button class="btn ghost" id="clear" hidden>Limpar</button>
     <span class="status" id="status"></span>
   </div>
@@ -69,6 +75,7 @@ h1{font-size:clamp(28px,4vw,44px);line-height:1.05;margin:0 0 6px;font-weight:80
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 <script>// Lê os itens de texto (com posição) de uma página da Ficha Funcional ALES
 // e devolve os campos no formato combinado.
@@ -120,7 +127,7 @@ function parseFicha(items) {
     uf: left('U.F.', 160),
     admissao: left('Admissão', 150),
     regime: left('Regime'),
-    cargo, tabPadrao,
+    cargo, tabPadrao, tabela: left('Tab.'),
     grupo: right('Seção') || right('Local'),
   };
 }
@@ -139,7 +146,10 @@ function fmtLogr(s) { return (s || '').replace(/\.+/g, '.').replace(/^([A-Za-zÀ
 
 function montar(f, opts) {
   opts = opts || {};
-  const mat = f.matriculaCompleta.length > 2 ? f.matriculaCompleta.slice(0, -2) : f.matriculaCompleta;
+  const m = f.matriculaCompleta || '';
+  const estag = /ESTAG/i.test([f.regime, f.vinculo, f.cargo, f.tabela].join(' ')) || (m.startsWith('00') && m.length >= 8);
+  // estagiário: tira os 2 zeros do início e os 2 dígitos do fim (00277601 -> 2776); demais: só os 2 do fim
+  const mat = estag ? m.slice(2, -2) : (m.length > 2 ? m.slice(0, -2) : m);
   const cargo = f.cargo + (f.tabPadrao ? ` (${f.tabPadrao})` : '');
   const linhas = [
     ['Vínculo', f.vinculo],
@@ -188,6 +198,7 @@ function montar(f, opts) {
     const built = fichas.map(f => montar(f, { senha }));
     out.innerHTML = built.map((b, i) => `
       <article class="card">
+        <button class="rm" data-rm="${i}" title="Remover esta ficha" aria-label="Remover esta ficha">×</button>
         <h2>${esc(fichas[i].nome || 'Sem nome')}</h2>
         <div class="meta">${esc(fichas[i].origem)}</div>
         ${b.avisos.length ? `<div class="warn">${b.avisos.map(esc).join('<br>')}</div>` : ''}
@@ -196,16 +207,54 @@ function montar(f, opts) {
         </div>
       </article>`).join('');
     out._built = built;
-    $('clear').hidden = !fichas.length;
+    $('clear').hidden = $('pdf').hidden = !fichas.length;
   }
 
   out.addEventListener('click', e => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { fichas.splice(+rm.dataset.rm, 1); status.textContent = `${fichas.length} ficha(s) na lista.`; render(); return; }
     const b = e.target.closest('.cp');
     if (!b || b.disabled) return;
     copy(out._built[+b.dataset.i].linhas[+b.dataset.j][1], null);
     out.querySelectorAll('.cp.ok').forEach(x => { x.classList.remove('ok'); x.textContent = 'Copiar'; });
     b.classList.add('ok'); b.textContent = 'Copiado';
   });
+
+  function gerarPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const M = 8, G = 6, W = (210 - 2 * M - G) / 2, H = (297 - 2 * M - G) / 2;
+    const LW = 30, PAD = 4;
+    out._built.forEach((b, i) => {
+      if (i && i % 4 === 0) doc.addPage();
+      const k = i % 4, x = M + (k % 2) * (W + G), y = M + Math.floor(k / 2) * (H + G);
+      doc.setDrawColor(150); doc.setLineWidth(0.3); doc.roundedRect(x, y, W, H, 2, 2);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20);
+      const titulo = doc.splitTextToSize(fichas[i].nome || 'Sem nome', W - 2 * PAD);
+      doc.text(titulo[0], x + PAD, y + PAD + 4);
+      doc.setDrawColor(200); doc.line(x + PAD, y + PAD + 6.5, x + W - PAD, y + PAD + 6.5);
+      let cy = y + PAD + 11.5;
+      const vw = W - 2 * PAD - LW;
+      let fs = 8.2, lh = 3.5, gap = 1.75;
+      // reduz a fonte se não couber
+      const medir = (s, h, g) => b.linhas.reduce((t, [, v]) => { doc.setFontSize(s); return t + doc.splitTextToSize(v || '-', vw).length * h + g; }, 0);
+      while (medir(fs, lh, gap) > H - 16 && fs > 6) { fs -= 0.4; lh -= 0.17; gap -= 0.1; }
+      b.linhas.forEach(([lab, v]) => {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(fs - 0.8); doc.setTextColor(95);
+        doc.text(lab, x + PAD, cy);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(fs); doc.setTextColor(20);
+        const ls = doc.splitTextToSize(v || '-', vw);
+        doc.text(ls, x + PAD + LW, cy);
+        cy += ls.length * lh + gap;
+      });
+    });
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    doc.save(`fichas-cadastro-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.pdf`);
+  }
+  $('pdf').onclick = () => {
+    if (!window.jspdf) { status.textContent = 'Não consegui carregar o gerador de PDF. Verifique a internet e recarregue a página.'; return; }
+    gerarPDF();
+  };
 
   try { $('senha').value = localStorage.getItem('senhaPadraoALES') || ''; } catch (e) {}
   $('senha').addEventListener('input', () => { try { localStorage.setItem('senhaPadraoALES', $('senha').value); } catch (e) {} render(); });
