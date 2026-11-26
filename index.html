@@ -150,9 +150,15 @@ function montar(f, opts) {
   const estag = /ESTAG/i.test([f.regime, f.vinculo, f.cargo, f.tabela].join(' ')) || (m.startsWith('00') && m.length >= 8);
   // estagiário: tira os 2 zeros do início e os 2 dígitos do fim (00277601 -> 2776); demais: só os 2 do fim
   const mat = estag ? m.slice(2, -2) : (m.length > 2 ? m.slice(0, -2) : m);
+  // Tipo de conta na plataforma
+  const tudo = [f.regime, f.vinculo, f.cargo, f.tabela].join(' ').toUpperCase();
+  let tipoConta = 'Servidor (Ales)';
+  if (estag) tipoConta = 'Estagiário (Ales)';
+  else if (/DEPUTADO/.test(f.cargo || '')) tipoConta = 'Deputado Estadual (Ales)';
+  else if (/APOSENT|INATIV/.test(tudo)) tipoConta = 'Aposentado (Inativo)';
   const cargo = f.cargo + (f.tabPadrao ? ` (${f.tabPadrao})` : '');
   const linhas = [
-    ['Vínculo', f.vinculo],
+    ['Tipo de conta', tipoConta],
     ['NOME', f.nome],
     ['Email pessoal', f.email],
     ['SENHA (padrão ales)', opts.senha || ''],
